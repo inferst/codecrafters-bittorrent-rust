@@ -1,27 +1,94 @@
-pub fn decode_string(encoded_value: &str) -> serde_json::Value {
-    // Example: "5:hello" -> "hello"
-    let colon_index = encoded_value.find(':').unwrap();
-    let number_string = &encoded_value[..colon_index];
-    let number = number_string.parse::<i64>().unwrap();
-    let number = usize::try_from(number).unwrap();
-    let string = &encoded_value[colon_index + 1..colon_index + 1 + number];
-    serde_json::Value::String(string.to_string())
+use std::{iter::Peekable, str::Chars};
+
+pub fn decode_string_from_chars(chars: &mut Peekable<Chars>) -> Option<serde_json::Value> {
+    if let Some(&char) = chars.peek() {
+        if char.is_ascii_digit() {
+            let mut length = String::new();
+
+            loop {
+                let char = chars.next()?;
+
+                if char == ':' {
+                    break;
+                }
+
+                length.push(char);
+            }
+
+            let number = length.parse::<usize>().unwrap();
+            let list: Vec<usize> = (0..number).collect();
+            let string = list.iter().map(|_| chars.next().unwrap()).collect();
+
+            return Some(serde_json::Value::String(string));
+        }
+    }
+
+    None
 }
 
-pub fn decode_integer(encoded_value: &str) -> serde_json::Value {
-    // Example: "i52e" -> "52"
-    let len = encoded_value.len();
-    let str = &encoded_value[1..len - 1];
-    let number = str.parse().unwrap();
-    serde_json::Value::Number(number)
+pub fn decode_value_from_chars(chars: &mut Peekable<Chars>) -> Option<serde_json::Value> {
+    if matches!(chars.peek(), Some(&char) if char == 'l') {
+        return decode_list_from_chars(chars);
+    } else if let Some(integer) = decode_integer_from_chars(chars) {
+        return Some(integer);
+    } else if let Some(string) = decode_string_from_chars(chars) {
+        return Some(string);
+    }
+
+    None
+}
+
+pub fn decode_integer_from_chars(chars: &mut Peekable<Chars>) -> Option<serde_json::Value> {
+    if let Some(&char) = chars.peek() {
+        if char == 'i' {
+            let mut string = String::new();
+
+            chars.next()?;
+
+            loop {
+                let char = chars.next()?;
+
+                if char == 'e' {
+                    let number = string.parse().unwrap();
+                    return Some(serde_json::Value::Number(number));
+                }
+
+                string.push(char);
+            }
+        }
+    }
+
+    None
+}
+
+pub fn decode_list_from_chars(chars: &mut Peekable<Chars>) -> Option<serde_json::Value> {
+    if let Some(&char) = chars.peek() {
+        if char == 'l' {
+            let mut list = vec![];
+
+            chars.next()?;
+
+            while let Some(value) = decode_value_from_chars(chars) {
+                list.push(value);
+            }
+
+            if let Some(char) = chars.next() {
+                assert!(char == 'e', "Unhandled encoded value");
+            }
+
+            return Some(serde_json::Value::Array(list));
+        }
+    }
+
+    None
 }
 
 pub fn decode_bencoded_value(encoded_value: &str) -> serde_json::Value {
-    if encoded_value.starts_with('i') {
-        return decode_integer(encoded_value);
-    } else if encoded_value.chars().next().unwrap().is_ascii_digit() {
-        return decode_string(encoded_value);
-    }
+    let mut chars = encoded_value.chars().peekable();
 
-    panic!("Unhandled encoded value: {encoded_value}");
+    if encoded_value.starts_with('l') {
+        decode_list_from_chars(&mut chars).unwrap()
+    } else {
+        decode_value_from_chars(&mut chars).unwrap()
+    }
 }
