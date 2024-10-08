@@ -1,9 +1,9 @@
 //use serde_json;
 use std::env;
 
-use decode::decode_bencoded_value;
+use decoder::decode_bencoded_value;
 
-mod decode;
+mod decoder;
 
 // Available if you need it!
 // use serde_bencode
