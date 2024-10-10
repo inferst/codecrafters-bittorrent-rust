@@ -85,10 +85,5 @@ pub fn decode_list_from_chars(chars: &mut Peekable<Chars>) -> Option<serde_json:
 
 pub fn decode_bencoded_value(encoded_value: &str) -> serde_json::Value {
     let mut chars = encoded_value.chars().peekable();
-
-    if encoded_value.starts_with('l') {
-        decode_list_from_chars(&mut chars).unwrap()
-    } else {
-        decode_value_from_chars(&mut chars).unwrap()
-    }
+    decode_value_from_chars(&mut chars).unwrap()
 }
