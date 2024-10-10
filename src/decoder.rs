@@ -1,8 +1,8 @@
-use std::{iter::Peekable, str::Chars};
+use std::{iter::Peekable, slice::Iter};
 
 use serde_json::Map;
 
-pub fn decode_string_from_chars(chars: &mut Peekable<Chars>) -> Option<serde_json::Value> {
+pub fn decode_string(chars: &mut Peekable<Iter<u8>>) -> Option<serde_json::Value> {
     if let Some(&char) = chars.peek() {
         if char.is_ascii_digit() {
             let mut length = String::new();
@@ -10,16 +10,19 @@ pub fn decode_string_from_chars(chars: &mut Peekable<Chars>) -> Option<serde_jso
             loop {
                 let char = chars.next()?;
 
-                if char == ':' {
+                if *char == b':' {
                     break;
                 }
 
-                length.push(char);
+                length.push(char::from(*char));
             }
 
             let number = length.parse::<usize>().unwrap();
             let list: Vec<usize> = (0..number).collect();
-            let string = list.iter().map(|_| chars.next().unwrap()).collect();
+            let string = list
+                .iter()
+                .map(|_| char::from(*chars.next().unwrap()))
+                .collect();
 
             return Some(serde_json::Value::String(string));
         }
@@ -28,20 +31,20 @@ pub fn decode_string_from_chars(chars: &mut Peekable<Chars>) -> Option<serde_jso
     None
 }
 
-pub fn decode_dictionary_from_chars(chars: &mut Peekable<Chars>) -> Option<serde_json::Value> {
+pub fn decode_dictionary(chars: &mut Peekable<Iter<u8>>) -> Option<serde_json::Value> {
     if let Some(&char) = chars.peek() {
-        if char == 'd' {
+        if char::from(*char) == 'd' {
             let mut list = vec![];
             let mut map = Map::new();
 
             chars.next()?;
 
-            while let Some(value) = decode_value_from_chars(chars) {
+            while let Some(value) = decode_value(chars) {
                 list.push(value);
             }
 
             if let Some(char) = chars.next() {
-                assert!(char == 'e', "Unhandled encoded value");
+                assert!(*char == b'e', "Unhandled encoded value");
             }
 
             let len = list.len() / 2;
@@ -60,23 +63,31 @@ pub fn decode_dictionary_from_chars(chars: &mut Peekable<Chars>) -> Option<serde
     None
 }
 
-pub fn decode_value_from_chars(chars: &mut Peekable<Chars>) -> Option<serde_json::Value> {
-    if matches!(chars.peek(), Some(&char) if char == 'd') {
-        return decode_dictionary_from_chars(chars);
-    } else if matches!(chars.peek(), Some(&char) if char == 'l') {
-        return decode_list_from_chars(chars);
-    } else if let Some(integer) = decode_integer_from_chars(chars) {
-        return Some(integer);
-    } else if let Some(string) = decode_string_from_chars(chars) {
-        return Some(string);
+pub fn decode_value(chars: &mut Peekable<Iter<u8>>) -> Option<serde_json::Value> {
+    let first = chars.peek().unwrap();
+
+    match first {
+        b'd' => {
+            return decode_dictionary(chars);
+        }
+        b'l' => {
+            return decode_list(chars);
+        }
+        b'i' => {
+            return decode_integer(chars);
+        }
+        b'0'..=b'9' => {
+            return decode_string(chars);
+        }
+        _ => {}
     }
 
     None
 }
 
-pub fn decode_integer_from_chars(chars: &mut Peekable<Chars>) -> Option<serde_json::Value> {
+pub fn decode_integer(chars: &mut Peekable<Iter<u8>>) -> Option<serde_json::Value> {
     if let Some(&char) = chars.peek() {
-        if char == 'i' {
+        if *char == b'i' {
             let mut string = String::new();
 
             chars.next()?;
@@ -84,12 +95,12 @@ pub fn decode_integer_from_chars(chars: &mut Peekable<Chars>) -> Option<serde_js
             loop {
                 let char = chars.next()?;
 
-                if char == 'e' {
+                if *char == b'e' {
                     let number = string.parse().unwrap();
                     return Some(serde_json::Value::Number(number));
                 }
 
-                string.push(char);
+                string.push(char::from(*char));
             }
         }
     }
@@ -97,19 +108,19 @@ pub fn decode_integer_from_chars(chars: &mut Peekable<Chars>) -> Option<serde_js
     None
 }
 
-pub fn decode_list_from_chars(chars: &mut Peekable<Chars>) -> Option<serde_json::Value> {
+pub fn decode_list(chars: &mut Peekable<Iter<u8>>) -> Option<serde_json::Value> {
     if let Some(&char) = chars.peek() {
-        if char == 'l' {
+        if *char == b'l' {
             let mut list = vec![];
 
             chars.next()?;
 
-            while let Some(value) = decode_value_from_chars(chars) {
+            while let Some(value) = decode_value(chars) {
                 list.push(value);
             }
 
             if let Some(char) = chars.next() {
-                assert!(char == 'e', "Unhandled encoded value");
+                assert!(*char == b'e', "Unhandled encoded value");
             }
 
             return Some(serde_json::Value::Array(list));
@@ -119,7 +130,7 @@ pub fn decode_list_from_chars(chars: &mut Peekable<Chars>) -> Option<serde_json:
     None
 }
 
-pub fn decode_bencoded_value(encoded_value: &str) -> serde_json::Value {
-    let mut chars = encoded_value.chars().peekable();
-    decode_value_from_chars(&mut chars).unwrap()
+pub fn decode_bencoded_value(encoded_value: &mut Vec<u8>) -> serde_json::Value {
+    let mut chars = encoded_value.iter().peekable();
+    decode_value(&mut chars).unwrap()
 }
