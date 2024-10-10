@@ -1,5 +1,7 @@
 use std::{iter::Peekable, str::Chars};
 
+use serde_json::Map;
+
 pub fn decode_string_from_chars(chars: &mut Peekable<Chars>) -> Option<serde_json::Value> {
     if let Some(&char) = chars.peek() {
         if char.is_ascii_digit() {
@@ -26,8 +28,42 @@ pub fn decode_string_from_chars(chars: &mut Peekable<Chars>) -> Option<serde_jso
     None
 }
 
+pub fn decode_dictionary_from_chars(chars: &mut Peekable<Chars>) -> Option<serde_json::Value> {
+    if let Some(&char) = chars.peek() {
+        if char == 'd' {
+            let mut list = vec![];
+            let mut map = Map::new();
+
+            chars.next()?;
+
+            while let Some(value) = decode_value_from_chars(chars) {
+                list.push(value);
+            }
+
+            if let Some(char) = chars.next() {
+                assert!(char == 'e', "Unhandled encoded value");
+            }
+
+            let len = list.len() / 2;
+
+            for _ in 0..len {
+                let value = list.pop().unwrap();
+                let key = list.pop().unwrap().as_str().unwrap().to_string();
+
+                map.insert(key, value);
+            }
+
+            return Some(serde_json::Value::Object(map));
+        }
+    }
+
+    None
+}
+
 pub fn decode_value_from_chars(chars: &mut Peekable<Chars>) -> Option<serde_json::Value> {
-    if matches!(chars.peek(), Some(&char) if char == 'l') {
+    if matches!(chars.peek(), Some(&char) if char == 'd') {
+        return decode_dictionary_from_chars(chars);
+    } else if matches!(chars.peek(), Some(&char) if char == 'l') {
         return decode_list_from_chars(chars);
     } else if let Some(integer) = decode_integer_from_chars(chars) {
         return Some(integer);
