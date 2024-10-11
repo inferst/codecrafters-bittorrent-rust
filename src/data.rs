@@ -30,6 +30,13 @@ impl DataValue {
         }
     }
 
+    pub fn bytes(&self) -> &[u8] {
+        match self {
+            DataValue::String(bytes) => bytes,
+            _ => &[]
+        }
+    }
+
     pub fn encode(&self) -> Vec<u8> {
         match self {
             DataValue::Dictionary(entries) => {

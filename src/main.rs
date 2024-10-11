@@ -2,9 +2,9 @@ use std::{env, fs};
 
 use data::DataValue;
 use decoder::decode_bencoded_value;
-use sha1::{Digest, Sha1};
 
 mod data;
+mod info;
 mod decoder;
 
 fn main() {
@@ -22,15 +22,8 @@ fn main() {
             eprintln!("Failed to read file {filename}");
             Vec::new()
         });
-        let decoded_value = DataValue::decode(file_contents);
-        let mut hasher = Sha1::new();
-        let info = decoded_value.get("info");
-        hasher.update(info.encode());
-        let result = hasher.finalize();
-        let code = hex::encode(result);
-        println!("Tracker URL: {}", decoded_value.get("announce").value());
-        println!("Length: {}", info.get("length"));
-        println!("Info Hash: {code}");
+        let data = DataValue::decode(file_contents);
+        info::print(&data);
     } else {
         println!("unknown command: {}", args[1]);
     }
