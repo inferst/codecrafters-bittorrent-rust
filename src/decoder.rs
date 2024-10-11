@@ -1,136 +1,104 @@
-use std::{iter::Peekable, slice::Iter};
+use core::panic;
+use std::collections::BTreeMap;
 
-use serde_json::Map;
+use crate::data::DataValue;
 
-pub fn decode_string(chars: &mut Peekable<Iter<u8>>) -> Option<serde_json::Value> {
-    if let Some(&char) = chars.peek() {
-        if char.is_ascii_digit() {
-            let mut length = String::new();
+pub fn decode_string(bytes: Vec<u8>) -> (DataValue, Vec<u8>) {
+    let mut length = String::new();
+    let mut rest = bytes.clone();
 
-            loop {
-                let char = chars.next()?;
+    for byte in bytes {
+        rest.remove(0);
 
-                if *char == b':' {
-                    break;
-                }
-
-                length.push(char::from(*char));
-            }
-
-            let number = length.parse::<usize>().unwrap();
-            let list: Vec<usize> = (0..number).collect();
-            let string = list
-                .iter()
-                .map(|_| char::from(*chars.next().unwrap()))
-                .collect();
-
-            return Some(serde_json::Value::String(string));
+        if byte == b':' {
+            break;
         }
+
+        length.push(char::from(byte));
     }
 
-    None
+    let number = length.parse::<usize>().unwrap();
+
+    let (value, rest) = rest.split_at(number);
+
+    (DataValue::String(value.to_vec()), rest.to_vec())
 }
 
-pub fn decode_dictionary(chars: &mut Peekable<Iter<u8>>) -> Option<serde_json::Value> {
-    if let Some(&char) = chars.peek() {
-        if char::from(*char) == 'd' {
-            let mut list = vec![];
-            let mut map = Map::new();
+pub fn decode_dictionary(bytes: Vec<u8>) -> (DataValue, Vec<u8>) {
+    let mut list = vec![];
+    let mut map = BTreeMap::new();
 
-            chars.next()?;
+    let mut rest = bytes;
 
-            while let Some(value) = decode_value(chars) {
-                list.push(value);
-            }
-
-            if let Some(char) = chars.next() {
-                assert!(*char == b'e', "Unhandled encoded value");
-            }
-
-            let len = list.len() / 2;
-
-            for _ in 0..len {
-                let value = list.pop().unwrap();
-                let key = list.pop().unwrap().as_str().unwrap().to_string();
-
-                map.insert(key, value);
-            }
-
-            return Some(serde_json::Value::Object(map));
-        }
+    while !rest.starts_with(&[b'e']) {
+        let result = decode_value(rest);
+        list.push(result.0);
+        rest = result.1;
     }
 
-    None
+    rest.remove(0);
+
+    let len = list.len() / 2;
+
+    for _ in 0..len {
+        let value = list.pop().unwrap();
+        let key = list.pop().unwrap().to_string();
+
+        map.insert(key, value);
+    }
+
+    (DataValue::Dictionary(map), rest)
 }
 
-pub fn decode_value(chars: &mut Peekable<Iter<u8>>) -> Option<serde_json::Value> {
-    let first = chars.peek().unwrap();
+pub fn decode_value(bytes: Vec<u8>) -> (DataValue, Vec<u8>) {
+    let (first, rest) = bytes.split_first().unwrap();
 
     match first {
-        b'd' => {
-            return decode_dictionary(chars);
-        }
-        b'l' => {
-            return decode_list(chars);
-        }
-        b'i' => {
-            return decode_integer(chars);
-        }
-        b'0'..=b'9' => {
-            return decode_string(chars);
-        }
-        _ => {}
-    }
-
-    None
-}
-
-pub fn decode_integer(chars: &mut Peekable<Iter<u8>>) -> Option<serde_json::Value> {
-    if let Some(&char) = chars.peek() {
-        if *char == b'i' {
-            let mut string = String::new();
-
-            chars.next()?;
-
-            loop {
-                let char = chars.next()?;
-
-                if *char == b'e' {
-                    let number = string.parse().unwrap();
-                    return Some(serde_json::Value::Number(number));
-                }
-
-                string.push(char::from(*char));
-            }
+        b'd' => decode_dictionary(rest.to_vec()),
+        b'l' => decode_list(rest.to_vec()),
+        b'i' => decode_integer(rest.to_vec()),
+        b'0'..=b'9' => decode_string(bytes),
+        _ => {
+            panic!("Error");
         }
     }
-
-    None
 }
 
-pub fn decode_list(chars: &mut Peekable<Iter<u8>>) -> Option<serde_json::Value> {
-    if let Some(&char) = chars.peek() {
-        if *char == b'l' {
-            let mut list = vec![];
+fn decode_integer(bytes: Vec<u8>) -> (DataValue, Vec<u8>) {
+    let mut value = vec![];
+    let mut rest = bytes.clone();
 
-            chars.next()?;
+    for byte in bytes {
+        rest.remove(0);
 
-            while let Some(value) = decode_value(chars) {
-                list.push(value);
-            }
-
-            if let Some(char) = chars.next() {
-                assert!(*char == b'e', "Unhandled encoded value");
-            }
-
-            return Some(serde_json::Value::Array(list));
+        if byte == b'e' {
+            break;
         }
+
+        value.push(byte);
     }
 
-    None
+    let value: String = value.iter().map(|x| char::from(*x)).collect();
+
+    (DataValue::Integer(value.parse().unwrap()), rest)
 }
 
-pub fn decode_bencoded_value(encoded_value: &mut Vec<u8>) -> serde_json::Value {
-    let mut chars = encoded_value.iter().peekable();
-    decode_value(&mut chars).unwrap()
+pub fn decode_list(bytes: Vec<u8>) -> (DataValue, Vec<u8>) {
+    let mut list = vec![];
+
+    let mut rest = bytes;
+
+    while !rest.starts_with(&[b'e']) {
+        let result = decode_value(rest);
+        list.push(result.0);
+        rest = result.1;
+    }
+
+    rest.remove(0);
+
+    (DataValue::List(list), rest)
+}
+
+pub fn decode_bencoded_value(bencoded_value: Vec<u8>) -> DataValue {
+    decode_value(bencoded_value).0
 }
