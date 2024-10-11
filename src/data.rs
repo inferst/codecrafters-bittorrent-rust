@@ -71,7 +71,7 @@ impl fmt::Display for DataValue {
             DataValue::String(string) => write!(fmt, "{}", str::from_utf8(string).unwrap()),
             DataValue::Integer(number) => write!(fmt, "{number}"),
             DataValue::List(_) => write!(fmt, "List"),
-            DataValue::Dictionary(_) => write!(fmt, "Dictionary"),
+            DataValue::Dictionary(_) => write!(fmt, "{{}}"),
         }
     }
 }
