@@ -1,4 +1,4 @@
-use core::panic;
+use core::{panic, str};
 use std::collections::BTreeMap;
 
 use crate::data::DataValue;
@@ -42,9 +42,15 @@ pub fn decode_dictionary(bytes: Vec<u8>) -> (DataValue, Vec<u8>) {
 
     for _ in 0..len {
         let value = list.pop().unwrap();
-        let key = list.pop().unwrap().to_string();
+        let key = list.pop().unwrap();
+        let string = key.to_string();
 
-        map.insert(key, value);
+        let key = match key {
+            DataValue::String(str) => str::from_utf8(&str).unwrap().to_string(),
+            _ => string,
+        };
+
+        map.insert(key.to_string(), value);
     }
 
     (DataValue::Dictionary(map), rest)

@@ -8,7 +8,7 @@ pub enum DataValue {
     Dictionary(BTreeMap<String, DataValue>),
     List(Vec<DataValue>),
     String(Vec<u8>),
-    Integer(usize),
+    Integer(isize),
 }
 
 impl DataValue {
@@ -20,6 +20,13 @@ impl DataValue {
         match self {
             DataValue::Dictionary(entries) => entries.get(key).unwrap(),
             _ => self,
+        }
+    }
+
+    pub fn value(&self) -> String {
+        match self {
+            DataValue::String(string) => str::from_utf8(string).unwrap().to_string(),
+            _ => self.to_string(),
         }
     }
 
@@ -68,27 +75,23 @@ impl DataValue {
 impl fmt::Display for DataValue {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            DataValue::String(string) => write!(fmt, "{}", str::from_utf8(string).unwrap()),
+            DataValue::String(string) => write!(fmt, "\"{}\"", str::from_utf8(string).unwrap()),
             DataValue::Integer(number) => write!(fmt, "{number}"),
-            DataValue::List(_) => {
-                write!(fmt, "List")
+            DataValue::List(values) => {
+                let strings: Vec<String> = values
+                    .iter()
+                    .map(std::string::ToString::to_string)
+                    .collect();
+                let string = strings.join(",");
+                write!(fmt, "[{string}]")
             }
             DataValue::Dictionary(entries) => {
-                //let strings: Vec<String> = entries
-                //    .iter()
-                //    .map(|(key, value)| {
-                //        let value: String = match value {
-                //            DataValue::String(str) => {
-                //                format!("\"{}\"", str::from_utf8(str).unwrap())
-                //            }
-                //            other => other.to_string(),
-                //        };
-                //
-                //        format!("{key}:{value}")
-                //    })
-                //    .collect();
-                //let string = strings.join(",");
-                write!(fmt, "{:?}", entries)
+                let strings: Vec<String> = entries
+                    .iter()
+                    .map(|(key, value)| format!("\"{key}\":{value}"))
+                    .collect();
+                let string = strings.join(",");
+                write!(fmt, "{{{string}}}")
             }
         }
     }

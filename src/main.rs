@@ -28,7 +28,7 @@ fn main() {
         hasher.update(info.encode());
         let result = hasher.finalize();
         let code = hex::encode(result);
-        println!("Tracker URL: {}", decoded_value.get("announce"));
+        println!("Tracker URL: {}", decoded_value.get("announce").value());
         println!("Length: {}", info.get("length"));
         println!("Info Hash: {code}");
     } else {
