@@ -68,16 +68,27 @@ impl DataValue {
 impl fmt::Display for DataValue {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            DataValue::String(string) => write!(fmt, "\"{}\"", str::from_utf8(string).unwrap()),
+            DataValue::String(string) => write!(fmt, "{}", str::from_utf8(string).unwrap()),
             DataValue::Integer(number) => write!(fmt, "{number}"),
-            DataValue::List(_) => write!(fmt, "List"),
+            DataValue::List(_) => {
+                write!(fmt, "List")
+            }
             DataValue::Dictionary(entries) => {
-                let strings: Vec<String> = entries
-                    .iter()
-                    .map(|(key, value)| format!("{key}:{value}"))
-                    .collect();
-                let string = strings.join(",");
-                write!(fmt, "{{{string}}}")
+                //let strings: Vec<String> = entries
+                //    .iter()
+                //    .map(|(key, value)| {
+                //        let value: String = match value {
+                //            DataValue::String(str) => {
+                //                format!("\"{}\"", str::from_utf8(str).unwrap())
+                //            }
+                //            other => other.to_string(),
+                //        };
+                //
+                //        format!("{key}:{value}")
+                //    })
+                //    .collect();
+                //let string = strings.join(",");
+                write!(fmt, "{:?}", entries)
             }
         }
     }
