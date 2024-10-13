@@ -2,10 +2,12 @@ use std::{env, error::Error, fs};
 
 use data::DataValue;
 use decoder::decode_bencoded_value;
+use handshake::connect;
 use peers::get_peers;
 
 mod data;
 mod decoder;
+mod handshake;
 mod info;
 mod peers;
 
@@ -39,6 +41,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
         for peer in peers {
             println!("{}:{}", peer.ip, peer.port);
         }
+    } else if command == "handshake" {
+        let filename = &args[2];
+        let file_contents = fs::read(filename).unwrap_or_else(|_| {
+            eprintln!("Failed to read file {filename}");
+            Vec::new()
+        });
+        let peer = &args[3];
+        let data = DataValue::decode(file_contents);
+        connect(data, peer.to_string()).await?;
     } else {
         println!("unknown command: {}", args[1]);
     }
