@@ -1,15 +1,22 @@
-use std::{env, error::Error, fs};
+use std::{
+    env,
+    error::Error,
+    fs::{self, File},
+    io::Write,
+};
 
-use data::DataValue;
-use decoder::decode_bencoded_value;
-use handshake::connect;
-use peers::get_peers;
+use bencode::Bencode;
+use download::download_piece;
+use handshake::handshake;
+use tokio::net::TcpStream;
+use torrent::Torrent;
 
-mod data;
+mod bencode;
 mod decoder;
+mod download;
 mod handshake;
-mod info;
-mod peers;
+mod peer;
+mod torrent;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -19,7 +26,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     if command == "decode" {
         let encoded_value = &args[2];
         let vector = encoded_value.as_bytes().to_vec();
-        let decoded_value = decode_bencoded_value(vector);
+        let decoded_value = Bencode::decode(vector);
         println!("{decoded_value}");
     } else if command == "info" {
         let filename = &args[2];
@@ -27,8 +34,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
             eprintln!("Failed to read file {filename}");
             Vec::new()
         });
-        let data = DataValue::decode(file_contents);
-        let info = info::Info::from(&data);
+        let data = Bencode::decode(file_contents);
+        let info = torrent::Torrent::from(&data);
         info.print();
     } else if command == "peers" {
         let filename = &args[2];
@@ -36,8 +43,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
             eprintln!("Failed to read file {filename}");
             Vec::new()
         });
-        let data = DataValue::decode(file_contents);
-        let peers = get_peers(&data).await.unwrap();
+        let data = Bencode::decode(file_contents);
+        let torrent = Torrent::from(&data);
+        let peers = torrent.get_peers().await.unwrap();
         for peer in peers {
             println!("{}:{}", peer.ip, peer.port);
         }
@@ -47,9 +55,34 @@ async fn main() -> Result<(), Box<dyn Error>> {
             eprintln!("Failed to read file {filename}");
             Vec::new()
         });
-        let peer = &args[3];
-        let data = DataValue::decode(file_contents);
-        connect(data, peer.to_string()).await?;
+        let peer = &args[3].to_string();
+        let data = Bencode::decode(file_contents);
+        let mut stream = TcpStream::connect(peer).await?;
+        let peer_id = handshake(&mut stream, data).await?;
+        println!("Peer ID: {peer_id}");
+    } else if command == "download_piece" {
+        let output = &args[3];
+
+        let mut file = File::options()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(output)
+            .unwrap();
+
+        file.write_all(&[]).unwrap();
+
+        let filename = &args[4];
+        let file_contents = fs::read(filename).unwrap_or_else(|_| {
+            eprintln!("Failed to read file {filename}");
+            Vec::new()
+        });
+
+        let index = &args[5].parse().unwrap();
+        let data = Bencode::decode(file_contents);
+
+        download_piece(&mut file, data, *index).await?;
     } else {
         println!("unknown command: {}", args[1]);
     }

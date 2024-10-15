@@ -1,45 +1,45 @@
 use core::{fmt, str};
 use std::collections::BTreeMap;
 
-use crate::decoder::decode_bencoded_value;
+use crate::decoder::decode;
 
 #[derive(Clone, Debug)]
-pub enum DataValue {
-    Dictionary(BTreeMap<String, DataValue>),
-    List(Vec<DataValue>),
+pub enum Bencode {
+    Dictionary(BTreeMap<String, Bencode>),
+    List(Vec<Bencode>),
     String(Vec<u8>),
     Integer(isize),
 }
 
-impl DataValue {
-    pub fn decode(bencoded_value: Vec<u8>) -> DataValue {
-        decode_bencoded_value(bencoded_value)
+impl Bencode {
+    pub fn decode(bencoded_value: Vec<u8>) -> Bencode {
+        decode(bencoded_value).0
     }
 
-    pub fn get(&self, key: &str) -> &DataValue {
+    pub fn get(&self, key: &str) -> &Bencode {
         match self {
-            DataValue::Dictionary(entries) => entries.get(key).unwrap(),
+            Bencode::Dictionary(entries) => entries.get(key).unwrap(),
             _ => self,
         }
     }
 
     pub fn value(&self) -> String {
         match self {
-            DataValue::String(string) => str::from_utf8(string).unwrap().to_string(),
+            Bencode::String(string) => str::from_utf8(string).unwrap().to_string(),
             _ => self.to_string(),
         }
     }
 
     pub fn bytes(&self) -> &[u8] {
         match self {
-            DataValue::String(bytes) => bytes,
-            _ => &[]
+            Bencode::String(bytes) => bytes,
+            _ => &[],
         }
     }
 
     pub fn encode(&self) -> Vec<u8> {
         match self {
-            DataValue::Dictionary(entries) => {
+            Bencode::Dictionary(entries) => {
                 let start = b'd';
                 let end = b'e';
                 let mut bytes = entries.iter().fold(vec![start], |acc, x| {
@@ -54,16 +54,16 @@ impl DataValue {
                 bytes.push(end);
                 bytes
             }
-            DataValue::String(string) => {
+            Bencode::String(string) => {
                 let mut bytes = string.clone();
                 let mut result = format!("{}:", bytes.len()).as_bytes().to_vec();
                 result.append(&mut bytes);
                 result
             }
-            DataValue::Integer(number) => {
+            Bencode::Integer(number) => {
                 return format!("i{number}e").as_bytes().to_vec();
             }
-            DataValue::List(values) => {
+            Bencode::List(values) => {
                 let start = b'l';
                 let end = b'e';
                 let mut bytes = values.iter().fold(vec![start], |acc, x| {
@@ -79,12 +79,12 @@ impl DataValue {
     }
 }
 
-impl fmt::Display for DataValue {
+impl fmt::Display for Bencode {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            DataValue::String(string) => write!(fmt, "\"{}\"", str::from_utf8(string).unwrap()),
-            DataValue::Integer(number) => write!(fmt, "{number}"),
-            DataValue::List(values) => {
+            Bencode::String(string) => write!(fmt, "\"{}\"", str::from_utf8(string).unwrap()),
+            Bencode::Integer(number) => write!(fmt, "{number}"),
+            Bencode::List(values) => {
                 let strings: Vec<String> = values
                     .iter()
                     .map(std::string::ToString::to_string)
@@ -92,7 +92,7 @@ impl fmt::Display for DataValue {
                 let string = strings.join(",");
                 write!(fmt, "[{string}]")
             }
-            DataValue::Dictionary(entries) => {
+            Bencode::Dictionary(entries) => {
                 let strings: Vec<String> = entries
                     .iter()
                     .map(|(key, value)| format!("\"{key}\":{value}"))
