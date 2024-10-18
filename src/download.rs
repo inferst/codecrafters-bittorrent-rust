@@ -1,103 +1,89 @@
-use std::{error::Error, fs::File, io::Write};
-
-use bytes::BufMut;
-use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
-    net::TcpStream,
+use std::{
+    collections::HashMap,
+    error::Error,
+    fs::File,
+    io::Write,
+    sync::{Arc, Mutex},
 };
 
-use crate::{bencode::Bencode, handshake::handshake, torrent};
+use tokio::task::JoinSet;
 
-pub async fn read_message(stream: &mut TcpStream) -> Result<Vec<u8>, Box<dyn Error>> {
-    let mut length = [0; 4];
-    stream.read_exact(&mut length).await?;
+use crate::{
+    bencode::Bencode,
+    peer::{Peer, PieceStatus},
+    torrent::{self, Torrent},
+};
 
-    let mut message = vec![0; u32::from_be_bytes(length) as usize];
-    stream.read_exact(&mut message).await?;
-
-    Ok(message)
+#[derive(Debug, Eq, PartialEq)]
+pub struct Piece {
+    pub hash: String,
+    pub status: PieceStatus,
 }
 
-pub async fn send_message(
-    stream: &mut TcpStream,
-    message_id: u8,
-    payload: Vec<u8>,
-) -> Result<(), Box<dyn Error>> {
-    let length = payload.len() + 1;
-    let length = u32::try_from(length).unwrap();
-
-    let mut message = vec![];
-    message.put_u32(length);
-    message.put_u8(message_id);
-
-    message.extend(payload);
-
-    stream.write_all(&message).await?;
-
-    Ok(())
-}
-
-const BLOCK_SIZE: u32 = 16 * 1024;
-
-pub async fn download_piece(
-    file: &mut File,
-    data: Bencode,
-    index: u32,
-) -> Result<(), Box<dyn Error>> {
-    let torrent = torrent::Torrent::from(&data);
+pub async fn load_piece(torrent: &Torrent, index: u32) -> Result<Vec<u8>, Box<dyn Error>> {
     let peers = torrent.get_peers().await?;
+
     let peer = peers.first().unwrap();
 
-    let mut stream = TcpStream::connect(peer.to_string()).await?;
+    let mut peer = Peer::create(peer.clone()).await;
+    peer.init(torrent).await?;
+    let piece = peer.load_piece(torrent, index).await?;
 
-    handshake(&mut stream, data).await?;
+    Ok(piece)
+}
 
-    let message = read_message(&mut stream).await?;
+pub async fn load_file(file: &mut File, data: Bencode) -> Result<(), Box<dyn Error>> {
+    let torrent = torrent::Torrent::from(&data);
+    let piece_hashes = torrent.piece_hashes();
+    let peers = torrent.get_peers().await?;
 
-    assert!(message[0] == 5);
+    let mut set = JoinSet::new();
 
-    send_message(&mut stream, 2, vec![]).await?;
+    let length = u32::try_from(piece_hashes.len()).unwrap();
 
-    let message = read_message(&mut stream).await?;
+    let mut pieces_map = HashMap::new();
 
-    assert!(message[0] == 1);
-
-    let file_length = torrent.length();
-    let piece_length = torrent.piece_length();
-    let piece_size = piece_length.min(file_length - piece_length * index);
-
-    println!("File length: {file_length}");
-    println!("Piece length: {piece_length}");
-    println!("Piece size: {piece_size}");
-
-    let mut piece_rest = piece_size;
-    let blocks = (piece_size + BLOCK_SIZE - 1) / BLOCK_SIZE;
-
-    dbg!(blocks);
-
-    for block in 0..blocks {
-        let block_size = BLOCK_SIZE.min(piece_rest);
-        let mut payload = vec![];
-        payload.put_u32(index);
-        payload.put_u32(block * BLOCK_SIZE);
-        payload.put_u32(block_size);
-
-        println!("Block size: {block_size}");
-
-        send_message(&mut stream, 6, payload).await?;
-
-        let message = read_message(&mut stream).await?;
-
-        assert!(message[0] == 7);
-
-        file.write_all(&message[9..])?;
-
-        piece_rest -= block_size;
+    for (index, hash) in piece_hashes.iter().enumerate() {
+        pieces_map.insert(
+            u32::try_from(index).unwrap(),
+            Piece {
+                hash: hash.to_string(),
+                status: PieceStatus::Waiting,
+            },
+        );
     }
 
-    let length = file.metadata().unwrap().len();
+    let pieces = Arc::new(Mutex::new(pieces_map));
+    let result = Arc::new(Mutex::new(HashMap::new()));
 
-    println!("File size: {length}");
+    for peer_id in peers {
+        let torrent = torrent.clone();
+        let pieces = pieces.clone();
+        let result = result.clone();
+
+        set.spawn(async move {
+            let mut peer = Peer::create(peer_id.clone()).await;
+            peer.init(&torrent).await.unwrap();
+            peer.load(pieces, result, &torrent).await.unwrap();
+            peer_id
+        });
+    }
+
+    while let Some(peer_id) = set.join_next().await {
+        let peer_id = peer_id.unwrap();
+        println!("Peer finished: {peer_id}");
+    }
+
+    let result = result.lock().unwrap();
+    let pieces = pieces.lock().unwrap();
+
+    dbg!(&result.keys());
+    dbg!(&pieces);
+
+    for index in 0..length {
+        let piece = result.get(&index).unwrap();
+        file.write_all(piece)?;
+    }
 
     Ok(())
 }

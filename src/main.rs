@@ -6,7 +6,6 @@ use std::{
 };
 
 use bencode::Bencode;
-use download::download_piece;
 use handshake::handshake;
 use tokio::net::TcpStream;
 use torrent::Torrent;
@@ -47,7 +46,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         let torrent = Torrent::from(&data);
         let peers = torrent.get_peers().await.unwrap();
         for peer in peers {
-            println!("{}:{}", peer.ip, peer.port);
+            println!("{peer}");
         }
     } else if command == "handshake" {
         let filename = &args[2];
@@ -57,8 +56,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
         });
         let peer = &args[3].to_string();
         let data = Bencode::decode(file_contents);
+        let torrent = Torrent::from(&data);
         let mut stream = TcpStream::connect(peer).await?;
-        let peer_id = handshake(&mut stream, data).await?;
+        let peer_id = handshake(&mut stream, &torrent).await?;
         println!("Peer ID: {peer_id}");
     } else if command == "download_piece" {
         let output = &args[3];
@@ -81,8 +81,32 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
         let index = &args[5].parse().unwrap();
         let data = Bencode::decode(file_contents);
+        let torrent = Torrent::from(&data);
 
-        download_piece(&mut file, data, *index).await?;
+        let piece = download::load_piece(&torrent, *index).await?;
+        file.write_all(&piece)?;
+    } else if command == "download" {
+        let output = &args[3];
+
+        let mut file = File::options()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(output)
+            .unwrap();
+
+        file.write_all(&[]).unwrap();
+
+        let filename = &args[4];
+        let file_contents = fs::read(filename).unwrap_or_else(|_| {
+            eprintln!("Failed to read file {filename}");
+            Vec::new()
+        });
+
+        let data = Bencode::decode(file_contents);
+
+        download::load_file(&mut file, data).await?;
     } else {
         println!("unknown command: {}", args[1]);
     }

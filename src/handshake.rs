@@ -5,20 +5,18 @@ use tokio::{
     net::TcpStream,
 };
 
-use crate::{bencode::Bencode, torrent};
+use crate::torrent::Torrent;
 
 pub async fn handshake(
     stream: &mut TcpStream,
-    data: Bencode,
+    torrent: &Torrent,
 ) -> Result<String, Box<dyn Error>> {
-    let info = torrent::Torrent::from(&data);
-
     let mut buffer: Vec<u8> = vec![];
 
     buffer.push(19); // BitTorrent protocol
     buffer.extend("BitTorrent protocol".as_bytes());
     buffer.extend([0; 8]); // reserved
-    buffer.extend(info.info_hash());
+    buffer.extend(torrent.info_hash());
     buffer.extend([0; 20]); // peer id
 
     stream.write_all(&buffer).await?;

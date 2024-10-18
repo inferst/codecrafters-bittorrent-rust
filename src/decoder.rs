@@ -94,13 +94,15 @@ fn integer(bytes: Vec<u8>) -> (Bencode, Vec<u8>) {
 pub fn decode(bytes: Vec<u8>) -> (Bencode, Vec<u8>) {
     let (first, rest) = bytes.split_first().unwrap();
 
+    let value = String::from_utf8_lossy(&bytes);
+
     match first {
         b'd' => dictionary(rest.to_vec()),
         b'l' => list(rest.to_vec()),
         b'i' => integer(rest.to_vec()),
         b'0'..=b'9' => string(bytes),
         _ => {
-            panic!("Error");
+            panic!("Decode error: {value}");
         }
     }
 }

@@ -3,8 +3,9 @@ use std::{error::Error, net::Ipv4Addr};
 use sha1::{Digest, Sha1};
 use url::{form_urlencoded, Url};
 
-use crate::{bencode::Bencode, peer::Peer};
+use crate::bencode::Bencode;
 
+#[derive(Clone)]
 pub struct Torrent {
     announce: Bencode,
     info: Bencode,
@@ -24,19 +25,29 @@ impl Torrent {
         hasher.finalize().to_vec()
     }
 
-    pub fn pieces(&self) -> Vec<u8> {
-        self.info.get("pieces").bytes().to_vec()
-    }
-
     pub fn length(&self) -> u32 {
         self.info.get("length").value().parse().unwrap()
+    }
+
+    pub fn pieces(&self) -> &[u8] {
+        self.info.get("pieces").bytes()
+    }
+
+    pub fn piece_hashes(&self) -> Vec<String> {
+        let mut strings = vec![];
+
+        for piece in self.pieces().chunks(20) {
+            strings.push(hex::encode(piece));
+        }
+
+        strings
     }
 
     pub fn piece_length(&self) -> u32 {
         self.info.get("piece length").value().parse().unwrap()
     }
 
-    pub async fn get_peers(&self) -> Result<Vec<Peer>, Box<dyn Error>> {
+    pub async fn get_peers(&self) -> Result<Vec<String>, Box<dyn Error>> {
         let info_hash: String = form_urlencoded::byte_serialize(&self.info_hash()).collect();
 
         let params = [
@@ -64,7 +75,7 @@ impl Torrent {
         for chunk in chunks {
             let ip = Ipv4Addr::new(chunk[0], chunk[1], chunk[2], chunk[3]);
             let port = u16::from_be_bytes([chunk[4], chunk[5]]);
-            result.push(Peer { ip, port });
+            result.push(format!("{ip}:{port}"));
         }
 
         Ok(result)
@@ -78,19 +89,12 @@ impl Torrent {
         println!("Info Hash: {}", hex::encode(info_hash));
         println!("Piece Length: {}", self.piece_length());
 
-        let mut piece = vec![];
+        let pieces = self.piece_hashes();
 
         println!("Piece Hashes:");
 
-        for byte in self.pieces() {
-            if piece.len() == 20 {
-                println!("{}", hex::encode(piece));
-                piece = vec![];
-            }
-
-            piece.push(byte);
+        for piece in pieces {
+            println!("{piece}");
         }
-
-        println!("{}", hex::encode(piece));
     }
 }
